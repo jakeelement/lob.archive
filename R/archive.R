@@ -8,7 +8,7 @@ lobster_archive <- function() {
 
   required_packages <- c(
     "shiny", "shinyjs",
-    "sortable", "DBI", "ROracle", "shinyWidgets"
+    "sortable", "DBI", "ROracle", "shinyWidgets", "dplyr"
   )
 
   missing_packages <- required_packages[
@@ -51,6 +51,13 @@ lobster_archive <- function() {
 
   arch_table <- "LOBARCHIVE"
   species_table <- "LOBARCHIVE_SPECIES"
+  lfa_table <- "LOBARCHIVE_LFA"
+  statdist_table <- "LOBARCHIVE_STATDIST"
+  community_table <- "LOBARCHIVE_COMMUNITY"
+  port_table <- "LOBARCHIVE_PORT"
+  province_table <- "LOBARCHIVE_PROVINCE"
+  year_table <- "LOBARCHIVE_YEAR"
+  name_table <- "LOBARCHIVE_NAME"
 
   get_archive <- function(table_name = NULL) {
     DBI::dbGetQuery(
@@ -58,6 +65,21 @@ lobster_archive <- function() {
       paste0("SELECT * FROM ", table_name)
     )
   }
+
+
+  # Lookup tables
+  species_lookup <- get_archive("LOBSTER.LOBSTERARCHIVE_SPECIES_LOOKUP")
+  port_lookup <- get_archive("LOBSTER.LOBSTERARCHIVE_PORT_LOOKUP")
+  district_lookup <- get_archive("LOBSTER.LOBSTERARCHIVE_DISTRICT_LOOKUP")
+  species_names <- c(NA,sort(unique(paste(species_lookup$COMMON, species_lookup$SPECIES_CODE, sep = ":"))))
+  port.names <- c(NA,sort(unique(port_lookup$PORT_NAME)))
+  port.codes <- c(NA,sort(unique(port_lookup$PORT_CODE)))
+  lfa.codes <- c(NA, sort(unique(district_lookup$LFA)))
+  district.codes <- c(NA, sort(unique(district_lookup$LOBSTER_DISTRICT)))
+  community.codes <- c(NA,sort(unique(as.numeric(port_lookup$COMMUNITY_CODE[port_lookup$COMMUNITY_CODE != "NA"]))))
+  statdist.codes <- c(NA,sort(unique(as.numeric(port_lookup$STAT_DIST_CODE))))
+  province.codes <- c(NA,sort(unique(port_lookup$PROV_CODE)))
+
 
   get_columns <- function(table_name = NULL) {
     names(DBI::dbGetQuery(
@@ -130,27 +152,35 @@ lobster_archive <- function() {
   }
 
 
-  insert_species_record <- function(uri, species_name, species_code) {
+  insert_other_record <- function(uri, table_name, A,a,B=NULL,b=NULL) {
 
-    columns <- get_columns(species_table)
+    columns <- get_columns(table_name)
 
     values <- list()
+
+    print(table_name)
+    print(A)
+    print(a)
+    print(B)
+    print(b)
+
+
 
     for (column in columns) {
 
       if (column == "URI") {
         values[[column]] <- sql_string(uri)
 
-      } else if (column == "SPECIES_NAME") {
-        values[[column]] <- sql_string(species_name)
+      } else if (column == A) {
+        values[[column]] <- sql_string(a)
 
-      } else if (column == "SPECIES_CODE") {
-        values[[column]] <- as.character(as.integer(species_code))
+      } else if (column == B) {
+        values[[column]] <- sql_string(b)
 
       }
     }
     sql <- paste0(
-      "INSERT INTO ", species_table,
+      "INSERT INTO ", table_name,
       " (", paste(
         DBI::dbQuoteIdentifier(con, columns),
         collapse = ", "
@@ -160,7 +190,8 @@ lobster_archive <- function() {
     )
 
     DBI::dbExecute(con, sql)
-    }
+  }
+
 
   # Create a new tag column
   create_tag <- function(tag_name) {
@@ -344,40 +375,38 @@ lobster_archive <- function() {
 
             shiny::fluidRow(
 
-              shiny::column(
-                2,
+              shiny::column(2, shiny::textInput("document_name","Document Name:")),
 
-            shiny::textInput(
-              "document_name",
-              "Document Name:"
-            )
-            ),
-            shiny::column(
-              1,
-            shiny::numericInput(
-              "pages",
-              "#Pages:",
-              value = NA,
-              min = 1,
-              step = 1
-            )),
+              shiny::column(1, shiny::numericInput("pages","#Pages:", value = NA, min = 1, step = 1)),
 
-            shiny::column(
-              2,
+              shiny::column(2, shiny::selectInput("species","Species:", choices = species_names)),
 
-              shiny::textInput(
-                "species",
-                "Species:"
-              )
+              shiny::column(1, shiny::textInput("year","Year:")),
+
+              shiny::column(2, shiny::textInput("first_name","First Name:")),
+
+              shiny::column(2, shiny::textInput("last_name","Last Name:"))
             ),
 
+            shiny::hr(),
+            shiny::h4("Areas"),
+            shiny::fluidRow(
+              shiny::column(1, shiny::selectInput("lfa","LFA:", choices = lfa.codes)),
+              shiny::column(1, shiny::selectInput("district","District:", choices = district.codes)),
+              shiny::column(1, shiny::selectInput("statdist","Stat District:", choices = statdist.codes)),
+              shiny::column(1, shiny::selectInput("community","Community:", choices = community.codes)),
+              shiny::column(1, shiny::selectInput("port_name","Port:", choices = port.names)),
+              shiny::column(1, shiny::selectInput("port_code","Port Code:", choices = port.codes)),
+              shiny::column(1, shiny::selectInput("province","Province:", choices = province.codes))
+
+            ),
+
+            shiny::hr(),
+            shiny::fluidRow(
             shiny::column(
               8,
             shiny::uiOutput("archive_tag_options")
             ),
-
-
-
             ),
 
             shiny::hr(),
@@ -849,10 +878,6 @@ lobster_archive <- function() {
 
 
     # ----------------------------------------------------------
-    # Dynamic tag selection
-    # ----------------------------------------------------------
-
-    # ----------------------------------------------------------
     # Dynamic tag selection buttons
     # ----------------------------------------------------------
 
@@ -1003,10 +1028,69 @@ lobster_archive <- function() {
             tags = input$archive_tags
           )
 
-          insert_species_record(
+          insert_other_record(
+            table_name = species_table,
             uri = paste0("L:/", file),
-            species_name = input$species,
-            species_code = 00000
+            A = "SPECIES_NAME",
+            a = input$species,
+            B = "SPECIES_CODE",
+            b = paste(rev(strsplit(input$species, ":", fixed = TRUE)[[1]]), collapse = ":")
+          )
+
+          insert_other_record(
+            table_name = year_table,
+            uri = paste0("L:/", file),
+            A = "YEAR",
+            a = input$year
+          )
+
+          insert_other_record(
+            table_name = name_table,
+            uri = paste0("L:/", file),
+            A = "FIRST",
+            a = input$first_name,
+            B = "LAST",
+            b = input$last_name
+          )
+
+        ##### AREAS ################
+          insert_other_record(
+            table_name = lfa_table,
+            uri = paste0("L:/", file),
+            A = "LFA",
+            a = input$lfa,
+            B = "DISTRICT",
+            b = input$district
+          )
+
+          insert_other_record(
+            table_name = statdist_table,
+            uri = paste0("L:/", file),
+            A = "STATDIST",
+            a = input$statdist
+          )
+
+          insert_other_record(
+            table_name = community_table,
+            uri = paste0("L:/", file),
+            A = "COMMUNITY_CODE",
+            a = input$community
+          )
+
+          insert_other_record(
+            table_name = port_table,
+            uri = paste0("L:/", file),
+            A = "PORT_NAME",
+            a = input$port_name,
+            B = "PORT_CODE",
+            b = input$port_code
+          )
+
+          insert_other_record(
+            table_name = province_table,
+            uri = paste0("L:/", file),
+            A = "PROV",
+            a = input$province
           )
 
         }
