@@ -71,14 +71,14 @@ lobster_archive <- function() {
   species_lookup <- get_archive("LOBSTER.LOBSTERARCHIVE_SPECIES_LOOKUP")
   port_lookup <- get_archive("LOBSTER.LOBSTERARCHIVE_PORT_LOOKUP")
   district_lookup <- get_archive("LOBSTER.LOBSTERARCHIVE_DISTRICT_LOOKUP")
-  species_names <- c(NA,sort(unique(paste(species_lookup$COMMON, species_lookup$SPECIES_CODE, sep = ":"))))
-  port.names <- c(NA,sort(unique(port_lookup$PORT_NAME)))
-  port.codes <- c(NA,sort(unique(port_lookup$PORT_CODE)))
-  lfa.codes <- c(NA, sort(unique(district_lookup$LFA)))
-  district.codes <- c(NA, sort(unique(district_lookup$LOBSTER_DISTRICT)))
-  community.codes <- c(NA,sort(unique(as.numeric(port_lookup$COMMUNITY_CODE[port_lookup$COMMUNITY_CODE != "NA"]))))
-  statdist.codes <- c(NA,sort(unique(as.numeric(port_lookup$STAT_DIST_CODE))))
-  province.codes <- c(NA,sort(unique(port_lookup$PROV_CODE)))
+  species_names <- c("",sort(unique(paste(species_lookup$COMMON, species_lookup$SPECIES_CODE, sep = ":"))))
+  port.names <- c("",sort(unique(port_lookup$PORT_NAME)))
+  port.codes <- c("",sort(unique(port_lookup$PORT_CODE)))
+  lfa.codes <- c("", sort(unique(district_lookup$LFA)))
+  district.codes <- c("", sort(unique(district_lookup$LOBSTER_DISTRICT)))
+  community.codes <- c("",sort(unique(as.numeric(port_lookup$COMMUNITY_CODE[port_lookup$COMMUNITY_CODE != "NA"]))))
+  statdist.codes <- c("",sort(unique(as.numeric(port_lookup$STAT_DIST_CODE))))
+  province.codes <- c("",sort(unique(port_lookup$PROV_CODE)))
 
 
   get_columns <- function(table_name = NULL) {
@@ -128,7 +128,7 @@ lobster_archive <- function() {
         values[[column]] <- sql_string(document_name)
 
       } else if (column == "PAGES") {
-        values[[column]] <- as.character(as.integer(pages))
+        values[[column]] <- sql_string(as.character(as.integer(pages)))
 
       } else if (column %in% tag_columns) {
 
@@ -158,13 +158,8 @@ lobster_archive <- function() {
 
     values <- list()
 
-    print(table_name)
-    print(A)
-    print(a)
-    print(B)
-    print(b)
-
-
+    a[a == ""] <- NA
+    if(!is.null(b)){b[b == ""] <- NA}
 
     for (column in columns) {
 
@@ -368,10 +363,10 @@ lobster_archive <- function() {
 
             shiny::h4("Document Information"),
 
-            shiny::p(
-              "The following information will be applied ",
-              "to all currently selected files."
-            ),
+            # shiny::p(
+            #   "The following information will be applied ",
+            #   "to all currently selected files."
+            # ),
 
             shiny::fluidRow(
 
@@ -411,7 +406,7 @@ lobster_archive <- function() {
 
             shiny::hr(),
 
-            shiny::h4("Create New Tag"),
+            # shiny::h4("Create New Data Type:"),
 
             shiny::fluidRow(
 
@@ -420,7 +415,7 @@ lobster_archive <- function() {
 
                 shiny::textInput(
                   "new_tag",
-                  "New Tag Name:",
+                  "Create New Data Type:",
                   placeholder = "e.g. TEMPERATURE"
                 )
               ),
@@ -432,7 +427,7 @@ lobster_archive <- function() {
 
                 shiny::actionButton(
                   "create_tag",
-                  "Create Tag"
+                  "Create Data Type"
                 )
               )
             ),
@@ -812,6 +807,15 @@ lobster_archive <- function() {
             )
           )
         ),
+
+        shiny::column(1,
+          shiny::br(),
+          shiny::actionButton(
+            "preview_data",
+            "Preview Data"
+          )
+        ),
+
         shiny::column(
           width = 1,
           shiny::uiOutput("selected_tags_summary")
@@ -911,17 +915,21 @@ lobster_archive <- function() {
 
     output$selected_tags_summary <- shiny::renderUI({
       selected <- input$archive_tags
+      selected <- c(input$document_name, input$pages, input$species, input$year, input$first_name, input$last_name,
+                    input$lfa, input$district, input$statdist, input$community, input$port_name, input$port_code, input$province, selected)
+
+      selected <- selected[!is.na(selected) & selected != ""]
 
       shiny::tagList(
         shiny::tags$small(
           style = "font-weight: bold;",
-          "Tags:",
+          "Tagged Info:",
           class = "selected-tags-summary"
         ),
         if (is.null(selected) || length(selected) == 0) {
           shiny::tags$small(
             style = "color: #888;",
-            "None selected"
+            "No info added"
           )
         } else {
           shiny::tags$small(
@@ -968,7 +976,23 @@ lobster_archive <- function() {
 
     })
 
+    # ----------------------------------------------------------
+    # Preview selected files
+    # ----------------------------------------------------------
 
+    shiny::observeEvent(input$preview_data, {
+
+      selected <- input$selected
+
+      shiny::req(selected)
+      shiny::req(pdf_dir())
+
+      for(i in 1:length(selected)){
+        check.files <- file.path(pdf_dir(), selected[i])
+        browseURL(check.files)
+      }
+
+    })
     # ----------------------------------------------------------
     # Enter new records into Oracle
     # ----------------------------------------------------------
@@ -1128,6 +1152,22 @@ lobster_archive <- function() {
 
       })
 
+      ####refresh data fields
+      shinyjs::delay(5,{
+        updateTextInput(session, "document_name", value = NA)
+        updateNumericInput(session, "pages", value = NA)
+        updateSelectInput(session, "species", selected = "")
+        updateTextInput(session, "year", value = NA)
+        updateTextInput(session, "first_name", value = NA)
+        updateTextInput(session, "last_name", value = NA)
+        updateSelectInput(session, "lfa", selected = "")
+        updateSelectInput(session, "district", selected = "")
+        updateSelectInput(session, "statdist", selected = "")
+        updateSelectInput(session, "community", selected = "")
+        updateSelectInput(session, "port_name", selected = "")
+        updateSelectInput(session, "port_code", selected = "")
+        updateSelectInput(session, "province", selected = "")
+      })
     })
 
 
