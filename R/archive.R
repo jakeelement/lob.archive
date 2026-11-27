@@ -221,6 +221,15 @@ lobster_archive <- function() {
   }
 
 
+  ###search other databases for values
+  search_table <- function(a.dat, a,A, file.names){
+    if(!(a %in% c("",NULL,NA))){
+      a.dat <- a.dat %>% filter(.data[[A]] %in% a)
+      file.names <- file.names[file.names %in% unique(a.dat$URI)]
+    }
+    return(file.names)
+  }
+
   # ============================================================
   # 3. SHINY UI
   # ============================================================
@@ -401,7 +410,7 @@ lobster_archive <- function() {
             shiny::column(
               8,
             shiny::uiOutput("archive_tag_options")
-            ),
+            )
             ),
 
             shiny::hr(),
@@ -456,11 +465,43 @@ lobster_archive <- function() {
             shiny::h4("Search Archive"),
 
             shiny::p(
-              "Select one or more tags to find documents ",
-              "associated with those tags."
+              "Enter data and/or select data types to find documents "
             ),
 
-            shiny::uiOutput("retrieve_tag_options"),
+            shiny::hr(),
+            shiny::h4("Document Information"),
+            shiny::fluidRow(
+
+              shiny::column(2, shiny::textInput("s_document_name","Document Name:")),
+
+              shiny::column(1, shiny::numericInput("s_pages","#Pages:", value = NA, min = 1, step = 1)),
+
+              shiny::column(2, shiny::selectInput("s_species","Species:", choices = species_names)),
+
+              shiny::column(1, shiny::textInput("s_year","Year:")),
+
+              shiny::column(2, shiny::textInput("s_first_name","First Name:")),
+
+              shiny::column(2, shiny::textInput("s_last_name","Last Name:"))
+            ),
+
+            shiny::hr(),
+            shiny::h4("Areas"),
+            shiny::fluidRow(
+              shiny::column(1, shiny::selectInput("s_lfa","LFA:", choices = lfa.codes)),
+              shiny::column(1, shiny::selectInput("s_district","District:", choices = district.codes)),
+              shiny::column(1, shiny::selectInput("s_statdist","Stat District:", choices = statdist.codes)),
+              shiny::column(1, shiny::selectInput("s_community","Community:", choices = community.codes)),
+              shiny::column(1, shiny::selectInput("s_port_name","Port:", choices = port.names)),
+              shiny::column(1, shiny::selectInput("s_port_code","Port Code:", choices = port.codes)),
+              shiny::column(1, shiny::selectInput("s_province","Province:", choices = province.codes))
+            ),
+
+            shiny::fluidRow(
+              shiny::column(
+                8,
+                shiny::uiOutput("retrieve_tag_options")
+              )),
 
             shiny::actionButton(
               "search_archive",
@@ -1181,11 +1222,24 @@ lobster_archive <- function() {
 
     output$retrieve_tag_options <- shiny::renderUI({
 
-      shiny::checkboxGroupInput(
-        "retrieve_tags",
-        "Filter by tags:",
+      shinyWidgets::checkboxGroupButtons(
+
+        inputId = "search_tags",
+
+        label = "Data Types:",
+
         choices = tag_columns(),
-        selected = NULL
+
+        selected = NULL,
+
+        justified = FALSE,
+
+        direction = "horizontal",
+
+        size = "xs",
+
+        status = "white"
+
       )
 
     })
@@ -1198,8 +1252,16 @@ lobster_archive <- function() {
     shiny::observeEvent(input$search_archive, {
 
       data <- archive_data()
+      species.dat <- get_archive(species_table)
+      year.dat <- get_archive(year_table)
+      name.dat <- get_archive(name_table)
+      lfa.dat <- get_archive(lfa_table)
+      statdist.dat <- get_archive(statdist_table)
+      community.dat <- get_archive(community_table)
+      port.dat <- get_archive(port_table)
+      province.dat <- get_archive(province_table)
 
-      selected_tags <- input$retrieve_tags
+      selected_tags <- input$search_tags
 
       # Apply AND filtering
       if (length(selected_tags)) {
@@ -1216,6 +1278,32 @@ lobster_archive <- function() {
         }
 
       }
+
+      if(!input$s_document_name %in% c(NA,NULL,"")){
+        data <- data %>% filter(DOCUMENT_NAME %in% input$s_document_name)
+      }
+
+      if(!input$s_pages %in% c(NA,NULL,"")){
+        data <- data %>% filter(PAGES %in% input$s_pages)
+      }
+
+      ## filter the the archive table by the other metdata table selections
+      file.names <- data$URI
+
+      file.names <- search_table(species.dat, input$s_species, "SPECIES_NAME", file.names)
+      file.names <- search_table(year.dat, input$s_year, "YEAR", file.names)
+      file.names <- search_table(name.dat, input$s_first_name, "FIRST", file.names)
+      file.names <- search_table(name.dat, input$s_last_name, "LAST", file.names)
+      file.names <- search_table(lfa.dat, input$s_lfa, "LFA", file.names)
+      file.names <- search_table(lfa.dat, input$s_district, "DISTRICT", file.names)
+      file.names <- search_table(statdist.dat, input$s_statdist, "STATDIST", file.names)
+      file.names <- search_table(community.dat, input$s_community, "COMMUNITY_CODE", file.names)
+      file.names <- search_table(port.dat, input$s_port_name, "PORT_NAME", file.names)
+      file.names <- search_table(port.dat, input$s_port_code, "PORT_CODE", file.names)
+      file.names <- search_table(province.dat, input$s_province, "PROV", file.names)
+
+        data <- data |> filter(URI %in% file.names)
+
 
       # Store results, even if there are zero rows
       search_data(data)
@@ -1254,36 +1342,6 @@ lobster_archive <- function() {
 
     })
 
-
-    # ============================================================
-    # DISPLAY SEARCH RESULTS
-    # ============================================================
-
-    output$search_results <- shiny::renderTable({
-
-      data <- search_data()
-
-      shiny::validate(
-        shiny::need(
-          !is.null(data),
-          "Run a search to display results."
-        ),
-
-        shiny::need(
-          nrow(data) > 0,
-          "No documents matched the selected tags."
-        )
-      )
-
-      data[, c(
-        "URI",
-        "DOCUMENT_NAME",
-        "PAGES"
-      ), drop = FALSE]
-
-    })
-
-
     # ============================================================
     # DISPLAY RESULT COUNT
     # ============================================================
@@ -1294,18 +1352,31 @@ lobster_archive <- function() {
 
       if (is.null(data)) {
         return("Run a search to display results.")
-      }
-
-      if (nrow(data) == 0) {
-        return("No matching documents found.")
-      }
-
-      paste(
+      } else paste(
         nrow(data),
         "matching document(s) found."
       )
+    })
+
+
+    # ============================================================
+    # DISPLAY SEARCH RESULTS
+    # ============================================================
+
+    output$search_results <- shiny::renderTable({
+
+      data <- search_data()
+
+      data[, c(
+        "URI",
+        "DOCUMENT_NAME",
+        "PAGES"
+      ), drop = FALSE]
 
     })
+
+
+
 
 
 
